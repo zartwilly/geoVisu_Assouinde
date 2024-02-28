@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Feb 28 16:29:43 2024
+
+@author: willy
+"""
+
+import os
+
+import pyproj
+import scipy
+import folium
+import numpy as np
+import pandas as pd
+from scipy.spatial import ConvexHull
+
+# Spatial Reference System
+inputEPSG = 32630 # 32629 #3857
+outputEPSG = 4326
+
+def convert_XY_to_latlon(X1):
+    proj = pyproj.Transformer.from_crs(inputEPSG, outputEPSG, always_xy=True)
+    X1_lat, X1_lon = proj.transform(X1[0], X1[1])
+    return X1_lat, X1_lon
+
+def read_csv(data_path="projet_geo_assouinde", nom_site="assouande3parcelles_test.csv"):
+    #data_csv = os.path.join('/home/willy/Bureau/Python', data_path, "data", nom_site)
+    data_csv = os.path.join( data_path, "data", nom_site)
+    df = pd.read_csv(data_csv, index_col=[0,1], sep=";", header=1)
+    df = pd.read_csv(data_csv, sep=";", header=1)
+    df = df.ffill()
+    
+    df.set_index(['Name', 'Coord'], inplace=True)
+    
+    names = list()
+    coords = list()
+    for name, coord in df.index:
+        X = df.loc[(name,coord),"X"]
+        Y = df.loc[(name,coord),"Y"]
+        lat, lon =  convert_XY_to_latlon((X,Y))
+        df.loc[(name,coord),"Lat"] = lat
+        df.loc[(name,coord),"Lon"] = lon
+        names.append(name)
+        coords.append(coord)
+        
+    names = list(set(names))
+    
+    
+    # Make an empty map
+    fl_n = folium.Map(location=[3,-5], tiles="OpenStreetMap", zoom_start=10)
+    
+    for name in names:
+        data_df = df.loc[(name,),]
+        lats = np.array(data_df.loc[:,"Lat"])
+        lons = np.array(data_df.loc[:,"Lon"])
+        # Define WGS84 as CRS:
+        geod = pyproj.Geod('+a=6378137 +f=0.003_352_810_664_747_512_6')
+        # Compute:
+        area, perim = geod.polygon_area_perimeter(lons, lats)
+        
+        dico = dict()
+        coords = list(data_df.index)
+        for coord in coords:
+            dico[f"{coord}_lat"] = [data_df.loc[coord,"Lat"]]
+            dico[f"{coord}_lon"] = [data_df.loc[coord,"Lon"]]
+            dico["name"] = name
+            dico["area"] = [area]
+            dico["perim"] = [perim]
+            
+        data = pd.DataFrame.from_dict(dico)
+        
+        for i in range(0,len(data)):
+            html=f"""
+                <h1> {data.iloc[i]['name']}</h1>
+                <p>infos de la parcelle </p>
+                <ul>
+                    <li>surface: {data.iloc[i]['area']}</li>
+                    <li>Point 1: {data.iloc[i]['X1_lat'], data.iloc[i]['X1_lon']} </li>
+                    <li>Point 2: {data.iloc[i]['X2_lat'], data.iloc[i]['X2_lon']} </li>
+                    <li>Point 3: {data.iloc[i]['X3_lat'], data.iloc[i]['X3_lon']} </li>
+                    <li>Point 4: {data.iloc[i]['X4_lat'], data.iloc[i]['X4_lon']} </li>
+                </ul>
+                </p>
+                <p>And that's a <a href="https://python-graph-gallery.com">link</a></p>
+                """
+            iframe = folium.IFrame(html=html, width=200, height=200)
+            
+            popup = folium.Popup(iframe, max_width=2650)
+            
+            popup = folium.Popup(iframe, max_width=2650)
+            folium.Marker(
+                location=[data.iloc[i]['X1_lon'], data.iloc[i]['X1_lat']],
+                popup=popup,
+                icon=folium.DivIcon(html=f"""
+                    <div><svg>
+                        <circle cx="50" cy="50" r="40" fill="#69b3a2" opacity=".4"/>
+                        <rect x="35", y="35" width="30" height="30", fill="red", opacity=".3"/>
+                    </svg></div>""")
+            ).add_to(fl_n)
+                
+    # Show the map again
+    name_file = nom_site.split(".")[0]
+    fl_n.save(f"visu_folium_{name_file}.html")
+    
+    pass
+
+
+
+if __name__ == "__main__":
+    
+    nom_site = "assouande3parcelles.csv"
+    nom_site = "assouande15parcelles.csv"
+    nom_site = "assouande42parcelles.csv"
+    data_path = "." # "geoVisu_Assouinde"
+    read_csv(data_path=data_path, nom_site=nom_site)
+    
+    pass
+    
