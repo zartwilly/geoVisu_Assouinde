@@ -175,8 +175,9 @@ def creation_geojson_file(data_path="projet_geo_assouinde",
             Lat = df.loc[(name_parcelle,coord),"Lat"]
             Lon = df.loc[(name_parcelle,coord),"Lon"]
             liste_coords.append([Lat, Lon])
+        liste_coords.append(liste_coords[0])
             
-        geometry = {"coordinates": liste_coords, "type":"LineString"}
+        geometry = {"coordinates": liste_coords, "type":"LineString"} # LineString, Polygon}
         
         feature = {"type":"Feature","properties":"{}","name": name_parcelle,
                    "geometry": geometry, "id": idx, "area": area, 
@@ -189,7 +190,7 @@ def creation_geojson_file(data_path="projet_geo_assouinde",
         
     pass
 
-def create_visu_geojson(data_path="projet_geo_assouinde",
+def create_visu_geojson_OLD(data_path="projet_geo_assouinde",
                           data_geo_save="data_geojson", 
                           name_parcelle="P"):
     
@@ -253,6 +254,97 @@ def create_visu_geojson(data_path="projet_geo_assouinde",
 
     pass
 
+###############################################################################
+#                       new version  --- start
+###############################################################################
+def create_html(gj):
+    html = ""
+    name = gj["features"][0]["name"]
+    area = gj["features"][0]["area"]
+    perim = gj["features"][0]["perim"]
+    a =f"""
+        <h1> {name}</h1>
+        <p>infos de la parcelle </p>
+        <ul>
+            <li>Surface: {area}</li>
+            <li>Perimetre: {perim}</li>
+        """
+    Xs = ""
+    coords = gj["features"][0]["geometry"]["coordinates"]
+    for i, coord in enumerate(coords):
+        X = f"<li> X{i} = ({coord[0], coord[1]}) </li> \n"
+        Xs += X
+        
+    
+    z = """
+        </ul>
+        </p>
+        <p>And that's a <a href="https://python-graph-gallery.com">link</a></p>
+        """
+        
+    html = a + Xs + z
+    return html
+
+def create_visu_geojson(data_path="projet_geo_assouinde",
+                            data_geo_save="data_geojson", 
+                            name_parcelle="P"):
+    
+    # Geojson data
+    path = os.path.join( data_path, data_geo_save)
+    number_files =  len(os.listdir(path))
+    parcelles = []
+    for i in range(1, number_files+1):
+        parcelles.append(os.path.join(data_geo_save, f"{name_parcelle}{i}.geojson"))
+        
+    # Define WGS84 as CRS:
+    geod = pyproj.Geod('+a=6378137 +f=0.003_352_810_664_747_512_6')
+
+    # Define folium object
+    fl_n = folium.Map(location=[5.17564,-3.47634], tiles="OpenStreetMap", 
+                      zoom_start=25)
+    
+    for i, parcelle in enumerate(parcelles):
+        with open(parcelle) as f:
+            gj = geojson.load(f)
+        name = gj["features"][0]["name"]
+        df_data = pd.DataFrame(gj["features"][0]["geometry"]["coordinates"], 
+                               columns=["lat","lon"])
+        
+        # Compute:
+        area, perim = geod.polygon_area_perimeter(df_data.lon, df_data.lat)
+        area = round(abs(area), 3)
+        perim = round(abs(perim), 3)
+        
+        gj["features"][0]["area"] = area
+        
+        html = create_html(gj)
+        
+        iframe = folium.IFrame(html=html, width=200, height=200)
+        
+        popup = folium.Popup(iframe, max_width=2650)
+        
+        folium.GeoJson( gj,
+            popup=popup,
+            tooltip=folium.GeoJsonTooltip(fields=['code', 'name']),
+            highlight_function=lambda feature: {
+                "fillColor": (
+                    "green" if feature["area"] < 400 else "#ffff00"
+                ),
+            },
+        ).add_to(fl_n)
+        
+
+    # Save the map again
+    name_file = nom_site.split(".")[0]
+    #fl_n.save("folium_geojson.html")
+    fl_n.save(f"visu_folium_geojson_{name_file}.html")
+
+    pass
+###############################################################################
+#                       new version  --- End
+###############################################################################
+
+
 if __name__ == "__main__":
     
     nom_site = "assouande3parcelles.csv"
@@ -262,6 +354,9 @@ if __name__ == "__main__":
     #read_csv(data_path=data_path, nom_site=nom_site)
     
     creation_geojson_file(data_path=data_path, nom_site=nom_site)
+    # create_visu_geojson_OLD(data_path=".",
+    #                     data_geo_save="data_geojson", 
+    #                     name_parcelle="P")
     create_visu_geojson(data_path=".",
                         data_geo_save="data_geojson", 
                         name_parcelle="P")
